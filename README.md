@@ -40,10 +40,11 @@ The goal is to **hide hardware complexity** and let students focus on **problem-
 cd ~
 git clone https://github.com/Skyrov01/robotics-for-good.git
 cd robotics-for-good
-
+```
 ```bash
 pip3 uninstall robot-sdk -y --break-system-packages
 ```
+
 ```bash
 pip3 install -e . --break-system-packages
 ```
