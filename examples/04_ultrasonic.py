@@ -1,3 +1,9 @@
+""" 
+    This example demonstrates how to use the ultrasonic sensor to detect obstacles and control the robot's movement accordingly. 
+    The robot will move forward until it detects an obstacle within a certain distance, at which point it will stop, back up, and turn to avoid the obstacle. 
+    The LEDs provide visual feedback on the robot's status (green for clear path, red for obstacle detected, yellow for backing up).
+""" 
+
 from robot_sdk.motion.motors import Motors
 from robot_sdk.feedback.leds import LEDs
 from robot_sdk.sensors.ultrasonic import Ultrasonic

@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-from base_camera import BaseCamera
+from .base_camera import BaseCamera
 from picamera2 import Picamera2
 import libcamera
 
@@ -24,7 +24,6 @@ class SimpleCamera(BaseCamera):
         "black":   ([0, 0, 0],       [180, 180, 25]),
         "white":   ([0, 0, 215],     [180, 20, 255]),
         "gray":    ([0, 0, 100],     [180, 20, 200]),
-        "my_color": ([104, 129, 234], [184, 255, 236])
     }
 
     def __init__(self, color="yellow"):
@@ -70,7 +69,28 @@ class SimpleCamera(BaseCamera):
         self.color_lower = np.array(lower)
         self.color_upper = np.array(upper)
 
-    
+    def set_color_range(self, lower, upper):
+        if lower[0] > 180 or upper[0] > 180:
+            raise ValueError("HSV Hue must be between 0 and 180")
+
+        self.color_lower = np.array(lower, dtype=np.uint8)
+        self.color_upper = np.array(upper, dtype=np.uint8)
+        self.color_name = "custom"
+
+    def add_color_preset(self, name, lower, upper):
+        """
+        Add a new HSV color preset.
+
+        Parameters:
+            name  : str
+            lower : [H, S, V]
+            upper : [H, S, V]
+        """
+
+        if len(lower) != 3 or len(upper) != 3:
+            raise ValueError("Color bounds must be [H, S, V]")
+
+        self.COLOR_PRESETS[name] = (lower, upper)
 
     # -------------------------------------------------
     # Vision logic
@@ -228,10 +248,20 @@ class SimpleCamera(BaseCamera):
         upper = np.clip([h_max, s_max, v_max] + margin, 0, 255)
 
         print(f"Calibrated HSV range: lower={lower}, upper={upper}")
-
+        
+        self.color_lower = np.array(lower)[::-1]
+        self.color_upper = np.array(upper)[::-1]
 
         return (lower.astype(int).tolist(), upper.astype(int).tolist())
 
+    def save_calibrated_color(self, name, roi_size=80, samples=1):
+        result = self.calibrate_color(roi_size=roi_size, samples=samples)
+        if result is None:
+            return False
+
+        lower, upper = result
+        self.add_color_preset(name, lower, upper)
+        return True
 
     def show_debug(self, color_name="red", delay=1):
         self.set_color(color_name) 
@@ -254,15 +284,3 @@ class SimpleCamera(BaseCamera):
         return True
 
 
-
-import time
-
-cam = SimpleCamera("yellow")
-
-
-result = cam.calibrate_color(roi_size=300, samples=1)
-print(result)
-
-# while True:
-#     cam.set_color("blue")
-#     cam.get_frame_with_detection()
