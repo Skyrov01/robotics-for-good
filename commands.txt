@@ -1,0 +1,3 @@
+
+pip3 uninstall robot-sdk -y
+pip3 install -e . --break-system-packages
