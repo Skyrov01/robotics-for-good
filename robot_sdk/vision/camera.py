@@ -1,6 +1,12 @@
 import cv2
 import numpy as np
-from .base_camera import BaseCamera
+import time
+
+if __name__ == "__main__":  
+    from base_camera import BaseCamera
+else:
+    from .base_camera import BaseCamera
+
 from picamera2 import Picamera2
 import libcamera
 
@@ -13,22 +19,23 @@ class SimpleCamera(BaseCamera):
     COLOR_PRESETS = {
         "red":     ([0, 140, 80],    [8, 255, 255]),
         "red2":    ([172, 140, 80],  [180, 255, 255]),
-        "green":   ([45, 100, 80],   [75, 255, 255]),
+        "green":   ([40, 70, 50],   [85, 255, 255]),
         "blue":    ([95, 100, 80],   [125, 255, 255]),
         "yellow":  ([22, 140, 120],  [32, 255, 255]),
-        "orange":  ([12, 150, 120],  [18, 255, 255]),
+        "orange":  ([12, 100, 80],  [25, 255, 255]),
         "purple":  ([135, 100, 80],  [155, 255, 255]),
         "pink":    ([162, 100, 120], [168, 255, 255]),
         "cyan":    ([85, 100, 80],   [95, 255, 255]),
         "magenta": ([145, 100, 80],  [160, 255, 255]),
         "black":   ([0, 0, 0],       [180, 180, 25]),
         "white":   ([0, 0, 215],     [180, 20, 255]),
-        "gray":    ([0, 0, 100],     [180, 20, 200]),
+        "gray":    ([0, 0, 160],     [180, 40, 255]),
     }
 
     def __init__(self, color="yellow"):
         super().__init__()
         self.set_color(color)
+        
 
     # -------------------------------------------------
     # Camera capture (Picamera2)
@@ -92,81 +99,109 @@ class SimpleCamera(BaseCamera):
 
         self.COLOR_PRESETS[name] = (lower, upper)
 
-    # -------------------------------------------------
-    # Vision logic
-    # -------------------------------------------------
 
-    def detect_bigest_color(self, frame):
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        
-        mask = cv2.inRange(hsv, self.color_lower, self.color_upper)
-        mask = cv2.erode(mask, None, iterations=2)
-        mask = cv2.dilate(mask, None, iterations=2)
+    # Detect the position of a color and return its position
+    def get_color_position(self, color_name, min_area=500):
 
-        contours, _ = cv2.findContours(
-            mask.copy(),
-            cv2.RETR_EXTERNAL,
-            cv2.CHAIN_APPROX_SIMPLE
-        )
-
-        if len(contours) == 0:
-            return False, None, None, None, None
-
-        c = max(contours, key=cv2.contourArea)
-
-        ((x, y), radius) = cv2.minEnclosingCircle(c)
-
-        if radius < 10:
-            return False, None, None, None, None
-
-        M = cv2.moments(c)
-        if M["m00"] == 0:
-            return False, None, None, None, None
-
-        center = (
-            int(M["m10"] / M["m00"]),
-            int(M["m01"] / M["m00"])
-        )
-
-        h, w, _ = frame.shape
-        error_x = (w // 2) - center[0]
-        error_y = (h // 2) - center[1]
-
-        return True, center, radius, error_x, error_y
-
-
-    # -------------------------------------------------
-    # Visualization (optional)
-    # -------------------------------------------------
-
-    def get_frame_with_detection(self, delay=50):
+        if color_name not in self.COLOR_PRESETS:
+            raise ValueError(f"Unknown color: {color_name}")
 
         frame = self.get_frame()
         if frame is None:
-            return True  # camera not ready yet
+            return False, None, None, None, 0, None, None
 
+        # Initialize detection variables
+        best_contour = None
+        best_area = 0
+        detected = False
+        position = None
+        cx, cy = None, None
+        
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        height, width, _ = frame.shape
+
+        left_limit = int(0.40 * width)
+        right_limit = int(0.60 * width)
+        # Get the HSV color range for the specified color
+        lower, upper = self.COLOR_PRESETS[color_name]
+        lower = np.array(lower, dtype=np.uint8)
+        upper = np.array(upper, dtype=np.uint8)
+
+        # Create a mask for the specified color
+        mask = cv2.inRange(hsv, lower, upper)
+        mask = cv2.erode(mask, None, iterations=2)
+        mask = cv2.dilate(mask, None, iterations=2)
+
+        # Find contours in the mask
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Find the largest contour that meets the minimum area requirement
+        for c in contours:
+            area = cv2.contourArea(c)
+            if area >= min_area and area > best_area:
+                best_area = area
+                best_contour = c
+
+        M = cv2.moments(best_contour)
+        # Calculate the center of the contour if it exists
+        if M["m00"] != 0:
+            
+            cx = int(M["m10"] / M["m00"])
+            cy = int(M["m01"] / M["m00"])
+            
+            # Determine position based on horizontal location
+            if cx < left_limit:
+                position = "left"
+            elif cx > right_limit:
+                position = "right"
+            else:
+                position = "center"
+
+            detected = True
+
+        return detected, position, cx, cy, best_area, best_contour, frame
+
+    # -------------------------------------------------
+    # Debugging
+    # -------------------------------------------------
+
+    def draw_debug_lines(self, frame):
         frame = frame.copy()
+        height, width, _ = frame.shape
 
-        found, center, radius, error_x, error_y = self.detect_bigest_color(frame)
+        # Band limits
+        left_limit = int(0.40 * width)
+        right_limit = int(0.60 * width)
 
-        if found:
-            cv2.circle(frame, center, int(radius), (255, 255, 255), 2)
-            cv2.circle(frame, center, 4, (255, 0, 0), -1)
-            text = f"{self.color_name} detected  ex:{error_x} ey:{error_y}"
-        else:
-            text = f"Searching for {self.color_name}"
+        # Draw band separators
+        cv2.line(frame, (left_limit, 0), (left_limit, height), (255, 255, 255), 2)
+        cv2.line(frame, (right_limit, 0), (right_limit, height), (255, 255, 255), 2)
 
-        cv2.putText(
-            frame,
-            text,
-            (20, 40),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            (255, 255, 255),
-            2,
-        )
+        # Band labels
+        cv2.putText(frame, "LEFT", (20, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+        cv2.putText(frame, "CENTER", (left_limit + 20, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+        cv2.putText(frame, "RIGHT", (right_limit + 20, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
 
-        cv2.imshow("Camera View", frame)
+        return frame
+
+
+    def debug(self, frame, color_name, position, cx, cy, area, contour, delay=30):
+
+        frame = self.draw_debug_lines(frame)
+
+        if contour is not None and area > 0:
+            ((x, y), radius) = cv2.minEnclosingCircle(contour)
+            cv2.circle(frame, (int(x), int(y)), int(radius), (0, 255, 0), 2)
+            cv2.circle(frame, (cx, cy), 4, (0, 0, 255), -1)
+
+            label = f"{color_name} | {position}"
+            cv2.putText(frame, label, (cx - 60, cy - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+
+        cv2.imshow("Color Object Debug", frame)
 
         if cv2.waitKey(delay) & 0xFF == ord("q"):
             cv2.destroyAllWindows()
@@ -174,108 +209,126 @@ class SimpleCamera(BaseCamera):
 
         return True
     # -------------------------------------------------
-    # Target direction logic
-    # ------------------------------------------------- 
+    # Detect the order of colors based on a list of target colors
+    # Returns a list of detected colors ordered from left to right
+    # The order is based on the horizontal position of the detected colors in the camera frame
+    # Colors that are not detected will be placed at the end of the list
+    def get_plot_order(self, min_area=500, target_colors=["green", "orange", "gray"]):
+        plots = []
 
-    def get_target_direction(self, width=640):
-        found, center, _ = self.detect_bigest_color(self.get_frame())
-        if not found:
-            return None
-        if center[0] < width / 3:
-            return "left"
-        elif center[0] > width * 2 / 3:
-            return "right"
-        return "center"
-
-    def calibrate_color(self, roi_size=80, samples=30):
-        """
-        Calibrate HSV range by sampling a central ROI.
-        Press 'c' to capture samples.
-        Press 'q' to quit.
-        """
-        hsv_samples = []
-
-        while True:
-            frame = self.get_frame()
-            if frame is None:
+        for color in target_colors:
+            result = self.get_color_position(color, min_area)
+            if result is None:
                 continue
 
-            h, w, _ = frame.shape
-            cx, cy = w // 2, h // 2
-            half = roi_size // 2
+            detected, position, cx, cy, area, contour, frame = result
+            if detected:
+                plots.append((color, cx))
+            else:
+                plots.append((color, float('inf')))  # Not detected, put at the end
 
-            roi = frame[
-                cy - half : cy + half,
-                cx - half : cx + half
-            ]
+        # Sort by x position
+        plots.sort(key=lambda p: p[1])
 
-            hsv = cv2.cvtColor(roi, cv2.COLOR_RGB2HSV)
+        return [color for color, _ in plots]
 
-            display = frame.copy()
-            cv2.rectangle(
-                display,
-                (cx - half, cy - half),
-                (cx + half, cy + half),
-                (0, 255, 0),
+    # Same but with debug visualization
+    def debug_plot_order(self, min_area=350, delay=30):
+        frame = self.get_frame()
+        if frame is None:
+            return True
+
+        frame = frame.copy()
+        height, width, _ = frame.shape
+
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+
+        detected = []
+
+        # Only the plots we care about
+        for color_name in ["orange", "green"]:
+            if color_name not in self.COLOR_PRESETS:
+                continue
+
+            lower, upper = self.COLOR_PRESETS[color_name]
+            lower = np.array(lower, dtype=np.uint8)
+            upper = np.array(upper, dtype=np.uint8)
+
+            mask = cv2.inRange(hsv, lower, upper)
+            mask = cv2.erode(mask, None, iterations=2)
+            mask = cv2.dilate(mask, None, iterations=2)
+
+            contours, _ = cv2.findContours(
+                mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+            )
+
+            best_contour = None
+            best_area = 0
+
+            for c in contours:
+                area = cv2.contourArea(c)
+                if area >= min_area and area > best_area:
+                    best_area = area
+                    best_contour = c
+
+            if best_contour is None:
+                continue
+
+            M = cv2.moments(best_contour)
+            if M["m00"] == 0:
+                continue
+
+            cx = int(M["m10"] / M["m00"])
+            cy = int(M["m01"] / M["m00"])
+
+            detected.append({
+                "color": color_name,
+                "cx": cx,
+                "cy": cy,
+                "area": best_area,
+                "contour": best_contour
+            })
+
+        # Sort by horizontal position
+        detected.sort(key=lambda d: d["cx"])
+
+        # Draw detections
+        for idx, obj in enumerate(detected, start=1):
+            cx, cy = obj["cx"], obj["cy"]
+            color = obj["color"]
+
+            ((x, y), radius) = cv2.minEnclosingCircle(obj["contour"])
+            cv2.circle(frame, (int(x), int(y)), int(radius), (0, 255, 0), 2)
+            cv2.circle(frame, (cx, cy), 4, (0, 0, 255), -1)
+
+            label = f"{color} ({idx})"
+            cv2.putText(
+                frame,
+                label,
+                (cx - 40, cy - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (255, 255, 255),
                 2
             )
 
-            cv2.imshow("Calibration", display)
-            key = cv2.waitKey(20) & 0xFF
+            # Draw vertical cx line
+            cv2.line(frame, (cx, 0), (cx, height), (255, 255, 255), 1)
 
-            if key == ord("c"):
-                hsv_samples.append(hsv.reshape(-1, 3))
-                print(f"Captured sample {len(hsv_samples)}")
+        # Draw order summary
+        if detected:
+            order_text = " - ".join([d["color"] for d in detected])
+            cv2.putText(
+                frame,
+                f"Order: {order_text}",
+                (20, height - 20),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (255, 255, 255),
+                2
+            )
 
-
-                if len(hsv_samples) >= samples:
-                    break
-
-            if key == ord("q"):
-                cv2.destroyAllWindows()
-                # return None
-
-        cv2.destroyAllWindows()
-
-        all_pixels = np.vstack(hsv_samples)
-
-        h_min, s_min, v_min = np.min(all_pixels, axis=0)
-        h_max, s_max, v_max = np.max(all_pixels, axis=0)
-
-        margin = np.array([5, 20, 20])
-
-        lower = np.clip([h_min, s_min, v_min] - margin, 0, 255)
-        upper = np.clip([h_max, s_max, v_max] + margin, 0, 255)
-
-        print(f"Calibrated HSV range: lower={lower}, upper={upper}")
-        
-        self.color_lower = np.array(lower)[::-1]
-        self.color_upper = np.array(upper)[::-1]
-
-        return (lower.astype(int).tolist(), upper.astype(int).tolist())
-
-    def save_calibrated_color(self, name, roi_size=80, samples=1):
-        result = self.calibrate_color(roi_size=roi_size, samples=samples)
-        if result is None:
-            return False
-
-        lower, upper = result
-        self.add_color_preset(name, lower, upper)
-        return True
-
-    def show_debug(self, color_name="red", delay=1):
-        self.set_color(color_name) 
-        frame = self.get_frame()
-        found, center, radius = self.detect_bigest_color(frame)
-
-        if found:
-            print(f"{color_name} detected at {center} with radius {radius}")
-            cv2.circle(frame, center, radius, (255, 255, 255), 2)
-            cv2.circle(frame, center, 4, (255, 0, 0), -1)
-        else:
-            print(f"No {color_name} detected")
-
-        cv2.imshow("Camera Debug", frame)
+        cv2.imshow("Plot Order Debug", frame)
 
         if cv2.waitKey(delay) & 0xFF == ord("q"):
             cv2.destroyAllWindows()
@@ -284,3 +337,10 @@ class SimpleCamera(BaseCamera):
         return True
 
 
+if __name__ == "__main__":
+
+    cam = SimpleCamera("yellow")
+
+    while True:
+        print(cam.get_plot_order())
+        time.sleep(0.05)
