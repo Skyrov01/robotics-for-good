@@ -17,7 +17,7 @@ ultra = Ultrasonic()
 
 SAFE_DISTANCE_CM = 25   # stop distance
 SPEED = 40
-MOTION_IS_ACTIVE = False
+MOTION_IS_ACTIVE = True
 
 try:
     leds.both("green")

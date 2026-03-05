@@ -12,31 +12,31 @@ led = LEDs()
 
 m = Motors()
 
-try:
-    print("Forward")
-    led.both("green")
-    m.forward(40)
-    time.sleep(2)
 
-    print("Rotate left")
-    led.left("red")
-    m.rotate_left(40)
-    time.sleep(1)
+print("Forward")
+led.both("green")
+m.forward(40)
+time.sleep(2)
 
-    led.off()
+print("Rotate left")
+led.left("red")
+m.rotate_left(40)
+time.sleep(1)
 
-    print("Rotate right")
-    led.right("red")
-    m.rotate_right(40)
-    time.sleep(1)
+led.off()
 
-    led.off()
+print("Rotate right")
+led.right("red")
+m.rotate_right(40)
+time.sleep(1)
 
-    print("Backward")
-    led.both("yellow")
-    m.backward(40)
-    time.sleep(2)
+led.off()
 
-finally:
-    m.stop()
-    led.off()
+print("Backward")
+led.both("yellow")
+m.backward(40)
+time.sleep(2)
+
+
+m.stop()
+led.off()
