@@ -28,8 +28,8 @@ class SimpleCamera(BaseCamera):
         "cyan":    ([85, 100, 80],   [95, 255, 255]),
         "magenta": ([145, 100, 80],  [160, 255, 255]),
         "black":   ([0, 0, 0],       [180, 180, 25]),
-        "white":   ([0, 0, 215],     [180, 20, 255]),
-        "gray":    ([0, 0, 160],     [180, 40, 255]),
+        "white":   ([0, 0, 215],     [180, 10, 255]),
+        "gray": ([0, 0, 180], [255, 40, 230])
     }
 
     def __init__(self, color="yellow"):
@@ -118,22 +118,28 @@ class SimpleCamera(BaseCamera):
         cx, cy = None, None
         
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        height, width, _ = frame.shape
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
+        height, width, _ = frame.shape
         left_limit = int(0.40 * width)
         right_limit = int(0.60 * width)
+
         # Get the HSV color range for the specified color
         lower, upper = self.COLOR_PRESETS[color_name]
         lower = np.array(lower, dtype=np.uint8)
         upper = np.array(upper, dtype=np.uint8)
 
         # Create a mask for the specified color
-        mask = cv2.inRange(hsv, lower, upper)
-        mask = cv2.erode(mask, None, iterations=2)
-        mask = cv2.dilate(mask, None, iterations=2)
+        color_mask = cv2.inRange(hsv, lower, upper)
+        color_mask = cv2.erode(color_mask, None, iterations=2)
+        color_mask = cv2.dilate(color_mask, None, iterations=2)
 
         # Find contours in the mask
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        _, gray_mask = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
+        
+        valid_mask = cv2.bitwise_and(color_mask, gray_mask)
+
+        contours, _ = cv2.findContours(valid_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         # Find the largest contour that meets the minimum area requirement
         for c in contours:
@@ -142,22 +148,23 @@ class SimpleCamera(BaseCamera):
                 best_area = area
                 best_contour = c
 
-        M = cv2.moments(best_contour)
-        # Calculate the center of the contour if it exists
-        if M["m00"] != 0:
-            
-            cx = int(M["m10"] / M["m00"])
-            cy = int(M["m01"] / M["m00"])
-            
-            # Determine position based on horizontal location
-            if cx < left_limit:
-                position = "left"
-            elif cx > right_limit:
-                position = "right"
-            else:
-                position = "center"
+        if best_contour is not None:
+            M = cv2.moments(best_contour)
+            # Calculate the center of the contour if it exists
+            if M["m00"] != 0:
+                
+                cx = int(M["m10"] / M["m00"])
+                cy = int(M["m01"] / M["m00"])
+                
+                # Determine position based on horizontal location
+                if cx < left_limit:
+                    position = "left"
+                elif cx > right_limit:
+                    position = "right"
+                else:
+                    position = "center"
 
-            detected = True
+                detected = True
 
         return detected, position, cx, cy, best_area, best_contour, frame
 
@@ -233,7 +240,7 @@ class SimpleCamera(BaseCamera):
         return [color for color, _ in plots]
 
     # Same but with debug visualization
-    def debug_plot_order(self, min_area=350, delay=30):
+    def debug_plot_order(self, min_area=500, delay=30):
         frame = self.get_frame()
         if frame is None:
             return True
@@ -242,11 +249,13 @@ class SimpleCamera(BaseCamera):
         height, width, _ = frame.shape
 
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
 
         detected = []
 
         # Only the plots we care about
-        for color_name in ["orange", "green"]:
+        for color_name in ["orange", "green", "gray"]:
             if color_name not in self.COLOR_PRESETS:
                 continue
 
@@ -254,13 +263,46 @@ class SimpleCamera(BaseCamera):
             lower = np.array(lower, dtype=np.uint8)
             upper = np.array(upper, dtype=np.uint8)
 
-            mask = cv2.inRange(hsv, lower, upper)
-            mask = cv2.erode(mask, None, iterations=2)
-            mask = cv2.dilate(mask, None, iterations=2)
+            # Create a mask for the specified color
+            color_mask = cv2.inRange(hsv, lower, upper)
+            color_mask = cv2.erode(color_mask, None, iterations=2)
+            color_mask = cv2.dilate(color_mask, None, iterations=2)
+            
+            
+            # Find contours in the mask
+            _, gray_mask = cv2.threshold(gray, 190, 255, cv2.THRESH_BINARY_INV)
+            
 
-            contours, _ = cv2.findContours(
-                mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-            )
+            valid_mask = color_mask # cv2.bitwise_and(color_mask, gray_mask)
+
+            # if color_name == "gray":
+            # Resize masks to the same dimensions (if needed)
+            height, width = gray_mask.shape
+            scale_percent = 75
+            new_width = int(width * scale_percent / 100)
+            new_height = int(height * scale_percent / 100)
+            
+            color_mask_resized = cv2.resize(color_mask, (new_width, new_height))
+            gray_mask_resized = cv2.resize(gray_mask, (new_width, new_height))
+            valid_mask_resized = cv2.resize(valid_mask, (new_width, new_height))
+
+            # Convert single-channel masks to 3-channel (BGR) for concatenation
+            color_mask_bgr = cv2.cvtColor(color_mask_resized, cv2.COLOR_GRAY2BGR)
+            gray_mask_bgr = cv2.cvtColor(gray_mask_resized, cv2.COLOR_GRAY2BGR)
+            valid_mask_bgr = cv2.cvtColor(valid_mask_resized, cv2.COLOR_GRAY2BGR)
+
+            # Add labels to each mask
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            cv2.putText(color_mask_bgr, f"Color Mask ({color_name})", (10, 20), font, 0.5, (125, 0, 255), 1, cv2.LINE_AA)
+            cv2.putText(gray_mask_bgr, "Gray Mask", (10, 20), font, 0.5, (125, 0, 255), 1, cv2.LINE_AA)
+            cv2.putText(valid_mask_bgr, "Valid Mask", (10, 20), font, 0.5, (125, 0, 255), 1, cv2.LINE_AA)
+
+            # Concatenate masks horizontally
+            combined = cv2.hconcat([color_mask_bgr, gray_mask_bgr, valid_mask_bgr])
+            # Show the combined image
+            cv2.imshow(f"All Masks (Color | {color_name} | Valid)", combined)
+
+            contours, _ = cv2.findContours(valid_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
             best_contour = None
             best_area = 0
@@ -289,8 +331,9 @@ class SimpleCamera(BaseCamera):
                 "contour": best_contour
             })
 
-        # Sort by horizontal position
-        detected.sort(key=lambda d: d["cx"])
+        # Sort by diagonal distance from top-left (0, 0)
+        # Objects closer to the top-left come first
+        detected.sort(key=lambda d: (-d["cy"], d["cx"]))  # Sum of x and y coordinates
 
         # Draw detections
         for idx, obj in enumerate(detected, start=1):
@@ -298,7 +341,7 @@ class SimpleCamera(BaseCamera):
             color = obj["color"]
 
             ((x, y), radius) = cv2.minEnclosingCircle(obj["contour"])
-            cv2.circle(frame, (int(x), int(y)), int(radius), (0, 255, 0), 2)
+            # cv2.circle(frame, (int(x), int(y)), int(radius), (0, 255, 0), 2)
             cv2.circle(frame, (cx, cy), 4, (0, 0, 255), -1)
 
             label = f"{color} ({idx})"
@@ -312,8 +355,9 @@ class SimpleCamera(BaseCamera):
                 2
             )
 
-            # Draw vertical cx line
+            # Draw vertical and horizontal lines from the center
             cv2.line(frame, (cx, 0), (cx, height), (255, 255, 255), 1)
+            cv2.line(frame, (0, cy), (width, cy), (255, 255, 255), 1)
 
         # Draw order summary
         if detected:
@@ -341,6 +385,10 @@ if __name__ == "__main__":
 
     cam = SimpleCamera("yellow")
 
+
     while True:
-        print(cam.get_plot_order())
+        # detected, position, cx, cy, best_area, contour, frame = cam.get_color_position(color_name="green", min_area=500)
+        # cam.debug(frame, "green", position, cx, cy, best_area, contour)
+        print(cam.get_plot_order(min_area=500, target_colors=["green", "orange", "gray"]))
+        # cam.debug_plot_order()
         time.sleep(0.05)
