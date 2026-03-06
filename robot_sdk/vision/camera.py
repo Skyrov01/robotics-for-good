@@ -275,32 +275,32 @@ class SimpleCamera(BaseCamera):
 
             valid_mask = color_mask # cv2.bitwise_and(color_mask, gray_mask)
 
-            # if color_name == "gray":
-            # Resize masks to the same dimensions (if needed)
-            height, width = gray_mask.shape
-            scale_percent = 75
-            new_width = int(width * scale_percent / 100)
-            new_height = int(height * scale_percent / 100)
-            
-            color_mask_resized = cv2.resize(color_mask, (new_width, new_height))
-            gray_mask_resized = cv2.resize(gray_mask, (new_width, new_height))
-            valid_mask_resized = cv2.resize(valid_mask, (new_width, new_height))
+            if color_name == "gray":
+                # Resize masks to the same dimensions (if needed)
+                height, width = gray_mask.shape
+                scale_percent = 75
+                new_width = int(width * scale_percent / 100)
+                new_height = int(height * scale_percent / 100)
+                
+                color_mask_resized = cv2.resize(color_mask, (new_width, new_height))
+                gray_mask_resized = cv2.resize(gray_mask, (new_width, new_height))
+                valid_mask_resized = cv2.resize(valid_mask, (new_width, new_height))
 
-            # Convert single-channel masks to 3-channel (BGR) for concatenation
-            color_mask_bgr = cv2.cvtColor(color_mask_resized, cv2.COLOR_GRAY2BGR)
-            gray_mask_bgr = cv2.cvtColor(gray_mask_resized, cv2.COLOR_GRAY2BGR)
-            valid_mask_bgr = cv2.cvtColor(valid_mask_resized, cv2.COLOR_GRAY2BGR)
+                # Convert single-channel masks to 3-channel (BGR) for concatenation
+                color_mask_bgr = cv2.cvtColor(color_mask_resized, cv2.COLOR_GRAY2BGR)
+                gray_mask_bgr = cv2.cvtColor(gray_mask_resized, cv2.COLOR_GRAY2BGR)
+                valid_mask_bgr = cv2.cvtColor(valid_mask_resized, cv2.COLOR_GRAY2BGR)
 
-            # Add labels to each mask
-            font = cv2.FONT_HERSHEY_SIMPLEX
-            cv2.putText(color_mask_bgr, f"Color Mask ({color_name})", (10, 20), font, 0.5, (125, 0, 255), 1, cv2.LINE_AA)
-            cv2.putText(gray_mask_bgr, "Gray Mask", (10, 20), font, 0.5, (125, 0, 255), 1, cv2.LINE_AA)
-            cv2.putText(valid_mask_bgr, "Valid Mask", (10, 20), font, 0.5, (125, 0, 255), 1, cv2.LINE_AA)
+                # Add labels to each mask
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                cv2.putText(color_mask_bgr, f"Color Mask ({color_name})", (10, 20), font, 0.5, (125, 0, 255), 1, cv2.LINE_AA)
+                cv2.putText(gray_mask_bgr, "Gray Mask", (10, 20), font, 0.5, (125, 0, 255), 1, cv2.LINE_AA)
+                cv2.putText(valid_mask_bgr, "Valid Mask", (10, 20), font, 0.5, (125, 0, 255), 1, cv2.LINE_AA)
 
-            # Concatenate masks horizontally
-            combined = cv2.hconcat([color_mask_bgr, gray_mask_bgr, valid_mask_bgr])
-            # Show the combined image
-            cv2.imshow(f"All Masks (Color | {color_name} | Valid)", combined)
+                # Concatenate masks horizontally
+                combined = cv2.hconcat([color_mask_bgr, gray_mask_bgr, valid_mask_bgr])
+                # Show the combined image
+                cv2.imshow(f"All Masks (Color | {color_name} | Valid)", combined)
 
             contours, _ = cv2.findContours(valid_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -389,6 +389,6 @@ if __name__ == "__main__":
     while True:
         # detected, position, cx, cy, best_area, contour, frame = cam.get_color_position(color_name="green", min_area=500)
         # cam.debug(frame, "green", position, cx, cy, best_area, contour)
-        print(cam.get_plot_order(min_area=500, target_colors=["green", "orange", "gray"]))
-        # cam.debug_plot_order()
+        # print(cam.get_plot_order(min_area=500, target_colors=["green", "orange", "gray"]))
+        cam.debug_plot_order()
         time.sleep(0.05)
