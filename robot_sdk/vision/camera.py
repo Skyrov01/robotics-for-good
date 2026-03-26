@@ -2,6 +2,8 @@ import cv2
 import numpy as np
 import time
 
+
+
 if __name__ == "__main__":  
     from base_camera import BaseCamera
 else:
@@ -28,8 +30,8 @@ class SimpleCamera(BaseCamera):
         "cyan":    ([85, 100, 80],   [95, 255, 255]),
         "magenta": ([145, 100, 80],  [160, 255, 255]),
         "black":   ([0, 0, 0],       [180, 180, 25]),
-        "white":   ([0, 0, 215],     [180, 10, 255]),
-        "gray": ([0, 0, 180], [255, 40, 230])
+        "white":   ([0, 0, 210],     [180, 30, 255]),
+        "gray":    ([0, 0, 60],      [180, 60, 200])
     }
 
     def __init__(self, color="yellow"):
@@ -100,6 +102,26 @@ class SimpleCamera(BaseCamera):
         self.COLOR_PRESETS[name] = (lower, upper)
 
 
+    def check_color_position(self, cx, cy, left_limit, right_limit, horizontal_limit):
+        position = ""
+        if cx < left_limit:
+            if cy < horizontal_limit:
+                position = "left-top"
+            else:
+                position = "left-bottom" 
+        elif cx > right_limit:
+            if cy < horizontal_limit:
+                position = "right-top"
+            else:
+                position = "right-bottom"
+        else:
+            if cy < horizontal_limit:
+                position = "center-top"
+            else:
+                position = "center-bottom"
+
+        return position
+
     # Detect the position of a color and return its position
     def get_color_position(self, color_name, min_area=500):
 
@@ -121,8 +143,10 @@ class SimpleCamera(BaseCamera):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         height, width, _ = frame.shape
-        left_limit = int(0.40 * width)
-        right_limit = int(0.60 * width)
+        left_limit = int(0.30 * width)
+        right_limit = int(0.70 * width)
+
+        horizontal_limit = int(0.50 * height)
 
         # Get the HSV color range for the specified color
         lower, upper = self.COLOR_PRESETS[color_name]
@@ -135,9 +159,12 @@ class SimpleCamera(BaseCamera):
         color_mask = cv2.dilate(color_mask, None, iterations=2)
 
         # Find contours in the mask
-        _, gray_mask = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
-        
-        valid_mask = cv2.bitwise_and(color_mask, gray_mask)
+        # Skip the brightness exclusion mask for white, since white pixels are bright by definition
+        if color_name == "white":
+            valid_mask = color_mask
+        else:
+            _, gray_mask = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
+            valid_mask = cv2.bitwise_and(color_mask, gray_mask)
 
         contours, _ = cv2.findContours(valid_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -156,13 +183,7 @@ class SimpleCamera(BaseCamera):
                 cx = int(M["m10"] / M["m00"])
                 cy = int(M["m01"] / M["m00"])
                 
-                # Determine position based on horizontal location
-                if cx < left_limit:
-                    position = "left"
-                elif cx > right_limit:
-                    position = "right"
-                else:
-                    position = "center"
+                position = self.check_color_position(cx, cy, left_limit, right_limit, horizontal_limit)
 
                 detected = True
 
@@ -177,12 +198,16 @@ class SimpleCamera(BaseCamera):
         height, width, _ = frame.shape
 
         # Band limits
-        left_limit = int(0.40 * width)
-        right_limit = int(0.60 * width)
+        left_limit = int(0.30 * width)
+        right_limit = int(0.70 * width)
+
+        horizontal_limit = int(0.50 * height)
 
         # Draw band separators
         cv2.line(frame, (left_limit, 0), (left_limit, height), (255, 255, 255), 2)
         cv2.line(frame, (right_limit, 0), (right_limit, height), (255, 255, 255), 2)
+
+        cv2.line(frame, (0, horizontal_limit), (width, horizontal_limit), (255, 255, 255), 2)
 
         # Band labels
         cv2.putText(frame, "LEFT", (20, 30),
@@ -255,7 +280,7 @@ class SimpleCamera(BaseCamera):
         detected = []
 
         # Only the plots we care about
-        for color_name in ["orange", "green", "gray"]:
+        for color_name in ["orange", "green", "gray", "white"]:
             if color_name not in self.COLOR_PRESETS:
                 continue
 
@@ -387,8 +412,12 @@ if __name__ == "__main__":
 
 
     while True:
-        # detected, position, cx, cy, best_area, contour, frame = cam.get_color_position(color_name="green", min_area=500)
-        # cam.debug(frame, "green", position, cx, cy, best_area, contour)
-        # print(cam.get_plot_order(min_area=500, target_colors=["green", "orange", "gray"]))
-        cam.debug_plot_order()
+        
+        for color in ["green", "orange", "gray", "white"]:
+            detected, position, cx, cy, best_area, contour, frame = cam.get_color_position(color_name=color, min_area=500)
+            cam.debug(frame, color, position, cx, cy, best_area, contour)
+            if detected and position == "center-bottom":
+                 
+                print(f"Color {color} detected: {detected}, Position: {position}, Center: ({cx}, {cy}), Area: {best_area}")
+
         time.sleep(0.05)
