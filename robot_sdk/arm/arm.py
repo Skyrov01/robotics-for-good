@@ -1,14 +1,15 @@
-from servo_driver import ServoCtrl
+from .servo_driver import ServoCtrl
 import time
 
 
 class Arm:
     
     # Logical joint mapping (adjust once)
-    BASE = 6
+    BASE = 7
     SHOULDER = 1
     ELBOW = 2
     GRIPPER = 3
+    CAMERA = 4
 
     def __init__(self):
         self.ctrl = ServoCtrl()
@@ -64,28 +65,6 @@ class Arm:
         self.ctrl.join()
 
 
-import time
-
-# Always resets to home position when initialized
-arm = Arm()
-
-try:
-    # Control the gripper: -20 to 20
-    arm.hand(-20)
-    time.sleep(1)
-    # Control the elbow: -90 to 90
-    arm.elbow(-90)
-    time.sleep(1)
-    # Control the shoulder: -90 to 90
-    arm.shoulder(-90)
-    time.sleep(1)
-    # Control the base: -45 to 90
-    arm.base(-45)
-    time.sleep(1)
-    arm.base(0)
-    time.sleep(1)
-
-
-finally:
-    time.sleep(1)
-    arm.shutdown()
+    def move_camera(self, angle):
+        print("Moving camera")
+        self.ctrl.moveAngle(self.CAMERA, angle)
